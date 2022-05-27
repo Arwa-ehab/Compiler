@@ -10,7 +10,8 @@
     int yywrap();
     void add(char);
     void insert_type();
-int last_entry=0;
+void increase_scope();
+void exit_scope();
     int search(char *);
     void insert_type();
 extern char* yytext;
@@ -19,11 +20,21 @@ extern char* yytext;
         char * id_name;
         char * data_type;
         char * type;
-       
+       int scope_id;
+	   int scope_exit;
 		char * value;
     } symbol_table[100];
 
+
+struct scope_node {
+      int scope_id;
+	  char scope_variables[30];
+    }*scope_head=NULL;
+
+
+
     int count=0;
+	int scope=0;
     int q;
     char type[10];
     extern int countn;
@@ -38,7 +49,7 @@ program: /* empty */
         | function
 ;
 function: /* empty */
-        | function main '(' ')' '{' body return '}';
+        | function main '(' ')' '{' {increase_scope();}body return '}'{ exit_scope();};
 		
 
  
@@ -55,23 +66,23 @@ datatype: INT { insert_type(); }
 | VOID { insert_type(); }
 ;
 
-body: FOR { add('K'); } '(' statement ';' condition ';' statement ')' '{' body '}'
-|WHILE { add('K'); } '(' condition ')' '{' body '}'
+body: FOR { add('K'); } '(' statement ';' condition ';' statement ')' '{'{increase_scope();} body '}'{ exit_scope();}
+|WHILE { add('K'); } '(' condition ')' '{'{increase_scope();}  body '}'{ exit_scope();}
  |switchstatements
-| IF { add('K'); } '(' condition ')' '{' body '}' else
+| IF { add('K'); } '(' condition ')' '{' {increase_scope();} body '}'{ exit_scope();} else
 | statement ';'
 | body body 
 | PRINTFF { add('K'); } '(' STR ')' ';'
 | SCANFF { add('K'); } '(' STR ',' '&' ID ')' ';'
 |DEBUG {printf("We are here");}
 ;
-switchstatements: SWITCH { add('K'); } '(' ID   ')'   '{' casestatements  '}'
+switchstatements: SWITCH { add('K'); } '(' ID   ')'   '{' {increase_scope();} casestatements  '}'{ exit_scope();}
 casestatements
 	: CASE { add('K'); } NUMBER ':' body BREAK { add('K'); } ';'casestatements
 	
 	| {;}
 	;
-else: ELSE { add('K'); } '{' body '}'
+else: ELSE { add('K'); } '{'{increase_scope();}  body '}'{ exit_scope();}
 |
 ;
 
@@ -136,7 +147,7 @@ int main() {
 	printf("_______________________________________\n\n");
 	int i=0;
 	for(i=0; i<count; i++) {
-		printf("%s\t%s\t%s\t%s\t\n", symbol_table[i].id_name, symbol_table[i].data_type, symbol_table[i].type, symbol_table[i].value);
+		printf("%s\t%s\t%s\t%s\t%d\t%d\t\n", symbol_table[i].id_name, symbol_table[i].data_type, symbol_table[i].type, symbol_table[i].value,symbol_table[i].scope_id,symbol_table[i].scope_exit);
 	}
 	for(i=0;i<count;i++) {
 		free(symbol_table[i].id_name);
@@ -155,7 +166,9 @@ int search(char *type) {
 	}
 	return 0;
 }
-
+void increase_scope(){
+	scope=scope+1;
+}
 void add(char c) {
   /* q=search(yytext); */
 
@@ -174,16 +187,41 @@ void add(char c) {
 			symbol_table[count].type=strdup("Keyword\t");
 			count++;
 		}
+		//adding variables
 		else if(c == 'V') {
-			symbol_table[count].id_name=strdup(yytext);
+           int found=0;
+			for(int i=0;i<count;i++)
+			{    printf("scope found\n");
+				printf("    %d\n",scope);
+				if(symbol_table[i].scope_id==scope)
+				{ 
+					if(strcmp(symbol_table[i].id_name,strdup(yytext) )==0)
+					{
+						printf("\nhere\n");
+                       found=1;
+					}
+				}
+			}
+			if(found==0)
+			{symbol_table[count].id_name=strdup(yytext);
 			symbol_table[count].data_type=strdup(type);
 			/* symbol_table[count].line_no=countn; */
 			symbol_table[count].type=strdup("Variable");
+
 			count++;
+			}
+			else{
+				printf("found= %d\n",found);
+				printf("Variable redefinition");
+			}
 		}
 		else if(c == 'C') {
-
-			symbol_table[count-1].value=strdup(yytext);
+			char * t=strdup("Variable");
+            if(strcmp(symbol_table[count-1].type,t )==0)
+			{
+				symbol_table[count-1].value=strdup(yytext);
+			symbol_table[count-1].scope_id=scope;
+			}
 			
 			
 		}
@@ -192,6 +230,7 @@ void add(char c) {
 			symbol_table[count].data_type=strdup(type);
 			/* symbol_table[count].line_no=countn; */
 			symbol_table[count].type=strdup("Function");
+						symbol_table[count].scope_id=scope;
 			count++;
 		}
 	
@@ -200,7 +239,16 @@ void add(char c) {
 void insert_type() {
 	strcpy(type, yytext);
 }
-
+void exit_scope(){
+	for(int i=0;i<count;i++)
+	{
+		if(symbol_table[i].scope_id==scope)
+		{
+			symbol_table[i].scope_exit=-1;
+		}
+	}
+	scope--;
+}
 void yyerror(const char* msg) {
   printf( "line %d: %s %s\n",countn, msg,yytext);
 }
