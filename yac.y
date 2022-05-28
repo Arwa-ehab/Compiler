@@ -25,6 +25,19 @@ extern char* yytext;
 		char * value;
     } symbol_table[100];
 
+	struct TableEntry{
+		char * id_name;
+        char * data_type;
+        char * type;
+		char * value;
+	};
+
+	struct SymbolTable
+	{
+		int index;
+		struct TableEntry entires[100];
+		struct SymbolTable* parent;
+	};
 
 struct scope_node {
       int scope_id;
@@ -32,6 +45,8 @@ struct scope_node {
     }*scope_head=NULL;
 
 
+	struct SymbolTable* CurrentTable;
+	int counter = 0;
     int count=0;
 	int scope=0;
     int q;
@@ -65,8 +80,8 @@ struct code{
 %%
 
 program: /* empty */ 
-        | function
-;
+        | function  | headers function;
+
 function: /* empty */
         | function main '(' ')' '{' {increase_scope();}body return '}'{ exit_scope();};
 	
@@ -93,7 +108,7 @@ body: FOR { add('K'); for_check = 1;} '(' statement ';' condition ';' statement 
 }
 |WHILE { add('K'); } '(' condition ')' '{'{increase_scope();}  body '}'{ exit_scope();}
  |switchstatements
-| IF { add('K'); for_check = 0;} '(' condition ')'  { sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $4.if_body); }'{' {increase_scope();} body '}' { sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $4.else_body); }{ exit_scope();} else
+| IF { add('K'); for_check = 0;} '(' condition ')'  { sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $4.if_body); }'{' {increase_scope();} body '}' { sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $4.else_body); exit_scope();} else
 { 
 	
 	sprintf(intermediate[inter_index++], "GOTO next\n");
@@ -194,9 +209,14 @@ return: RETURN { add('K'); } value ';'
 %%
 
 int main() {
+		CurrentTable = &(struct SymbolTable){
+		.index = 0,
+		.parent = NULL
+	};
+
   yyparse();
   printf("\n\n");
-	printf("\t\t\t\t\t\t\t\t PHASE 1: LEXICAL ANALYSIS \n\n");
+	/* printf("\t\t\t\t\t\t\t\t PHASE 1: LEXICAL ANALYSIS \n\n");
 	printf("\nSYMBOL   DATATYPE   TYPE    Value \n");
 	printf("_______________________________________\n\n");
 	int i=0;
@@ -207,7 +227,7 @@ int main() {
 		free(symbol_table[i].id_name);
 		free(symbol_table[i].type);
 	}
-	printf("\n\n");
+	printf("\n\n"); */
 
 	printf("\t\t\t\t\t\t\t   PHASE 4: INTERMEDIATE CODE GENERATION \n\n");
 	for(int i=0; i<inter_index; i++){
@@ -227,69 +247,46 @@ int search(char *type) {
 	return 0;
 }
 void increase_scope(){
-	scope=scope+1;
+
+	struct SymbolTable *temp = (struct SymbolTable*)malloc(sizeof(struct SymbolTable));
+	temp->index = 0;
+	temp->parent = CurrentTable;
+	CurrentTable = temp;
+
 }
 void add(char c) {
-  /* q=search(yytext); */
+   /* q=search(yytext);
+  if(!q) { */
+  
 
     if(c == 'H') {
-			symbol_table[count].id_name=strdup(yytext);
-			symbol_table[count].data_type=strdup(type);
-			/* symbol_table[count].line_no=countn; */
-			symbol_table[count].type=strdup("Header");
-			
-			count++;
+			CurrentTable->entires[CurrentTable->index].id_name=strdup(yytext);
+			CurrentTable->entires[CurrentTable->index].data_type=strdup(type);
+			CurrentTable->entires[CurrentTable->index].type=strdup("Header");
+			CurrentTable->index++;
 		}
 		else if(c == 'K') {
-			symbol_table[count].id_name=strdup(yytext);
-			symbol_table[count].data_type=strdup("N/A");
-			/* symbol_table[count].line_no=countn; */
-			symbol_table[count].type=strdup("Keyword\t");
-			count++;
+			/* CurrentTable.entires[CurrentTable.index].id_name=strdup(yytext);
+			CurrentTable.entires[CurrentTable.index].data_type=strdup("N/A");
+			CurrentTable.entires[CurrentTable.index].type=strdup("Keyword\t");
+			CurrentTable.index++; */
 		}
-		//adding variables
 		else if(c == 'V') {
-           int found=0;
-			for(int i=0;i<count;i++)
-			{    
-				if(symbol_table[i].scope_id==scope)
-				{ 
-					if(strcmp(symbol_table[i].id_name,strdup(yytext) )==0)
-					{
-			
-                       found=1;
-					}
-				}
-			}
-			if(found==0)
-			{symbol_table[count].id_name=strdup(yytext);
-			symbol_table[count].data_type=strdup(type);
-			/* symbol_table[count].line_no=countn; */
-			symbol_table[count].type=strdup("Variable");
-
-			count++;
-			}
-			else{
-			
-			}
+			CurrentTable->entires[CurrentTable->index].id_name=strdup(yytext);
+			CurrentTable->entires[CurrentTable->index].data_type=strdup(type);
+			CurrentTable->entires[CurrentTable->index].type=strdup("Variable");
+			CurrentTable->index++;
 		}
 		else if(c == 'C') {
-			char * t=strdup("Variable");
-            if(strcmp(symbol_table[count-1].type,t )==0)
-			{
-				symbol_table[count-1].value=strdup(yytext);
-			symbol_table[count-1].scope_id=scope;
-			}
-			
-			
+
+			CurrentTable->entires[CurrentTable->index-1].value=strdup(yytext);
+
 		}
 		else if(c == 'F') {
-			symbol_table[count].id_name=strdup(yytext);
-			symbol_table[count].data_type=strdup(type);
-			/* symbol_table[count].line_no=countn; */
-			symbol_table[count].type=strdup("Function");
-						symbol_table[count].scope_id=scope;
-			count++;
+			/* CurrentTable.entires[CurrentTable.index].id_name=strdup(yytext);
+			CurrentTable.entires[CurrentTable.index].data_type=strdup(type);
+			CurrentTable.entires[CurrentTable.index].type=strdup("Function");
+			CurrentTable.index++; */
 		}
 	
 }
@@ -298,14 +295,23 @@ void insert_type() {
 	strcpy(type, yytext);
 }
 void exit_scope(){
-	for(int i=0;i<count;i++)
-	{
-		if(symbol_table[i].scope_id==scope)
-		{
-			symbol_table[i].scope_exit=-1;
-		}
+
+	printf("\nSYMBOL   DATATYPE   TYPE    Value \n");
+	printf("_______________________________________\n\n");
+	int i=0;
+	for(i=0; i<CurrentTable->index; i++) {
+		printf("%s\t%s\t%s\t%s\t\n", CurrentTable->entires[i].id_name, CurrentTable->entires[i].data_type, CurrentTable->entires[i].type, CurrentTable->entires[i].value);
 	}
-	scope--;
+	printf("\n\n");
+
+/* printf("%d\n",CurrentTable.index); */
+/* CurrentTable = *CurrentTable.parent; */
+/* printf("%d\n",CurrentTable.index); */
+
+/* printf("exit index%d\n",CurrentTable->index); */
+CurrentTable = CurrentTable->parent;
+/* printf("Current index%d\n",CurrentTable->index); */
+
 }
 void yyerror(const char* msg) {
   printf( "line %d: %s %s\n",countn, msg,yytext);
