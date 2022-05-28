@@ -26,46 +26,50 @@ extern char* yytext;
     } symbol_table[100];
 
 
-	struct TableEntry{
-		char * id_name;
-        char * data_type;
-        char * type;
-		char * value;
-	};
-
-	struct SymbolTable
-	{
-		int index;
-		struct TableEntry entires[100];
-		struct SymbolTable* parent;
-	};
-
-
 struct scope_node {
       int scope_id;
 	  char scope_variables[30];
     }*scope_head=NULL;
 
 
-	struct SymbolTable* CurrentTable;
-	int counter = 0;
     int count=0;
 	int scope=0;
     int q;
     char type[10];
     extern int countn;
+	int temp=0;
+	int label=0;
+	int for_check;
+	char intermediate[100][100];
+	int inter_index=0;
+	char buffer[50];
 %}
-%define parse.error verbose
-%token VOID CHARACTER PRINTFF SCANFF DEBUG INT CASE SWITCH BREAK FLOAT CHAR FOR WHILE IF ELSE TRUE FALSE 
-%token NUMBER FLOAT_NUM ID LE GE EQ NE GT LT AND OR STR ADD MULTIPLY DIVIDE SUBTRACT UNARY INCLUDE RETURN 
 
+%union{
+char * str;
+struct node{
+	char name[100];
+}node_;
+struct code{
+	char name[100];
+	char if_body[5];
+	char else_body[5];
+}code_object;
+}
+//https://github.com/Abdallah-Sobehy/compiler/blob/master/yacc.y
+%define parse.error verbose
+%token<node_> VOID ID CHARACTER PRINTFF SCANFF DEBUG INT CASE SWITCH BREAK FLOAT CHAR FOR WHILE IF ELSE TRUE FALSE NUMBER FLOAT_NUM  LE GE EQ NE GT LT AND OR STR ADD MULTIPLY DIVIDE SUBTRACT UNARY INCLUDE RETURN 
+
+%type <node_> headers main body return datatype expression statement init value arithmetic relop program  else
+%type<code_object>condition
 %%
 
 program: /* empty */ 
-        | function | headers function;
-
+        | function
+;
 function: /* empty */
         | function main '(' ')' '{' {increase_scope();}body return '}'{ exit_scope();};
+	
 		
 
  
@@ -82,13 +86,21 @@ datatype: INT { insert_type(); }
 | VOID { insert_type(); }
 ;
 
-body: FOR { add('K'); } '(' statement ';' condition ';' statement ')' '{'{increase_scope();} body '}'{ exit_scope();}
+body: FOR { add('K'); for_check = 1;} '(' statement ';' condition ';' statement ')' '{'{increase_scope();} body '}'{ exit_scope();  
+  sprintf(intermediate[inter_index++], buffer); 
+    sprintf(intermediate[inter_index++], "JUMP to %s\n", $6.if_body);
+    sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $6.else_body);
+}
 |WHILE { add('K'); } '(' condition ')' '{'{increase_scope();}  body '}'{ exit_scope();}
  |switchstatements
-| IF { add('K'); } '(' condition ')' '{' {increase_scope();} body '}'{ exit_scope();} else
+| IF { add('K'); for_check = 0;} '(' condition ')'  { sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $4.if_body); }'{' {increase_scope();} body '}' { sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $4.else_body); }{ exit_scope();} else
+{ 
+	
+	sprintf(intermediate[inter_index++], "GOTO next\n");
+}
 | statement ';'
 | body body 
-| PRINTFF { add('K');} '(' STR ')' ';'
+| PRINTFF { add('K'); } '(' STR ')' ';'
 | SCANFF { add('K'); } '(' STR ',' '&' ID ')' ';'
 |DEBUG {printf("We are here");}
 ;
@@ -103,28 +115,54 @@ else: ELSE { add('K'); } '{'{increase_scope();}  body '}'{ exit_scope();}
 ;
 
 condition: value relop value 
+{ if(for_check) {  
+        sprintf($$.if_body, "L%d", label++);  
+        sprintf(intermediate[inter_index++], "\nLABEL %s:\n", $$.if_body);
+        sprintf(intermediate[inter_index++], "\nif NOT (%s %s %s) GOTO L%d\n", $1.name, $2.name, $3.name, label);  
+        sprintf($$.else_body, "L%d", label++); 
+    } 
+    else {  
+        sprintf(intermediate[inter_index++], "\nif (%s %s %s) GOTO L%d else GOTO L%d\n", $1.name, $2.name, $3.name, label, label+1);
+        sprintf($$.if_body, "L%d", label++);  
+        sprintf($$.else_body, "L%d", label++); 
+    }}
 | TRUE { add('K'); }
 | FALSE { add('K'); }
 |
 ;
 
 statement: datatype ID { add('V'); } init
-| ID '=' expression
+{  
+sprintf(intermediate[inter_index++], "%s = %s\n", $2.name, $4.name);
+	}
+| ID '=' expression{ sprintf(intermediate[inter_index++], "%s = %s\n", $1.name, $3.name);}
 | ID relop expression
-| ID UNARY
-| UNARY ID
-|error ';'
-|error '}'
-|error '{'
+| ID UNARY  {
+	if(!strcmp($2.name, "++")) {
+		sprintf(buffer, "t%d = %s + 1\n%s = t%d\n", temp, $1.name, $1.name, temp);
+	}
+	else {
+		sprintf(buffer, "t%d = %s + 1\n%s = t%d\n", temp, $1.name, $1.name, temp);
+	}}
+| UNARY ID{if(!strcmp($1.name, "++")) {
+		sprintf(buffer, "t%d = %s + 1\n%s = t%d\n", temp, $2.name, $2.name, temp++);
+	}
+	else {
+		sprintf(buffer, "t%d = %s - 1\n%s = t%d\n", temp, $2.name, $2.name, temp++);
+
+	}}
+
 
 ;
 
-init: '=' value
-|
+init: '=' value{strcpy($$.name, $2.name); }
+|{strcpy($$.name, "NULL");}
 ;
 
-expression: expression arithmetic expression
-| value
+expression: expression arithmetic expression{sprintf($$.name, "t%d", temp);
+	temp++;
+	sprintf(intermediate[inter_index++], "%s = %s %s %s\n",  $$.name, $1.name, $2.name, $3.name);}
+| value { strcpy($$.name, $1.name); }
 
 ;
 
@@ -143,10 +181,10 @@ relop: LT
 | NE
 ;
 
-value: NUMBER { add('C'); }
-| FLOAT_NUM { add('C'); }
-| CHARACTER { add('C'); }
-| ID  
+value: NUMBER { add('C');  strcpy($$.name, $1.name);}
+| FLOAT_NUM { add('C');  strcpy($$.name, $1.name);}
+| CHARACTER { add('C');  strcpy($$.name, $1.name);}
+| ID  { strcpy($$.name, $1.name);}
 ;
 
 return: RETURN { add('K'); } value ';'
@@ -156,25 +194,8 @@ return: RETURN { add('K'); } value ';'
 %%
 
 int main() {
-	CurrentTable = &(struct SymbolTable){
-		.index = 0,
-		.parent = NULL
-	};
-
-	/* CurrentTable->parent = NULL; */
-	/* CurrentTable->index = 0; */
-
   yyparse();
-
-  /* printf("\nSYMBOL   DATATYPE   TYPE    Value \n");
-	printf("_______________________________________\n\n");
-	int i=0;
-	for(i=0; i<CurrentTable.index; i++) {
-		printf("%s\t%s\t%s\t%s\t\n", CurrentTable.entires[i].id_name, CurrentTable.entires[i].data_type, CurrentTable.entires[i].type, CurrentTable.entires[i].value);
-	}
-	printf("\n\n"); */
-
-  /* printf("\n\n");
+  printf("\n\n");
 	printf("\t\t\t\t\t\t\t\t PHASE 1: LEXICAL ANALYSIS \n\n");
 	printf("\nSYMBOL   DATATYPE   TYPE    Value \n");
 	printf("_______________________________________\n\n");
@@ -186,7 +207,13 @@ int main() {
 		free(symbol_table[i].id_name);
 		free(symbol_table[i].type);
 	}
-	printf("\n\n"); */
+	printf("\n\n");
+
+	printf("\t\t\t\t\t\t\t   PHASE 4: INTERMEDIATE CODE GENERATION \n\n");
+	for(int i=0; i<inter_index; i++){
+		printf("%s", intermediate[i]);
+	}
+	printf("\n\n");
 }
 
 int search(char *type) {
@@ -200,46 +227,69 @@ int search(char *type) {
 	return 0;
 }
 void increase_scope(){
-
-	struct SymbolTable *temp = (struct SymbolTable*)malloc(sizeof(struct SymbolTable));
-	temp->index = 0;
-	temp->parent = CurrentTable;
-	CurrentTable = temp;
-
+	scope=scope+1;
 }
 void add(char c) {
-  /* q=search(yytext);
-  if(!q) { */
-  
+  /* q=search(yytext); */
 
     if(c == 'H') {
-			CurrentTable->entires[CurrentTable->index].id_name=strdup(yytext);
-			CurrentTable->entires[CurrentTable->index].data_type=strdup(type);
-			CurrentTable->entires[CurrentTable->index].type=strdup("Header");
-			CurrentTable->index++;
+			symbol_table[count].id_name=strdup(yytext);
+			symbol_table[count].data_type=strdup(type);
+			/* symbol_table[count].line_no=countn; */
+			symbol_table[count].type=strdup("Header");
+			
+			count++;
 		}
 		else if(c == 'K') {
-			/* CurrentTable.entires[CurrentTable.index].id_name=strdup(yytext);
-			CurrentTable.entires[CurrentTable.index].data_type=strdup("N/A");
-			CurrentTable.entires[CurrentTable.index].type=strdup("Keyword\t");
-			CurrentTable.index++; */
+			symbol_table[count].id_name=strdup(yytext);
+			symbol_table[count].data_type=strdup("N/A");
+			/* symbol_table[count].line_no=countn; */
+			symbol_table[count].type=strdup("Keyword\t");
+			count++;
 		}
+		//adding variables
 		else if(c == 'V') {
-			CurrentTable->entires[CurrentTable->index].id_name=strdup(yytext);
-			CurrentTable->entires[CurrentTable->index].data_type=strdup(type);
-			CurrentTable->entires[CurrentTable->index].type=strdup("Variable");
-			CurrentTable->index++;
+           int found=0;
+			for(int i=0;i<count;i++)
+			{    
+				if(symbol_table[i].scope_id==scope)
+				{ 
+					if(strcmp(symbol_table[i].id_name,strdup(yytext) )==0)
+					{
+			
+                       found=1;
+					}
+				}
+			}
+			if(found==0)
+			{symbol_table[count].id_name=strdup(yytext);
+			symbol_table[count].data_type=strdup(type);
+			/* symbol_table[count].line_no=countn; */
+			symbol_table[count].type=strdup("Variable");
+
+			count++;
+			}
+			else{
+			
+			}
 		}
 		else if(c == 'C') {
-
-			CurrentTable->entires[CurrentTable->index-1].value=strdup(yytext);
-
+			char * t=strdup("Variable");
+            if(strcmp(symbol_table[count-1].type,t )==0)
+			{
+				symbol_table[count-1].value=strdup(yytext);
+			symbol_table[count-1].scope_id=scope;
+			}
+			
+			
 		}
 		else if(c == 'F') {
-			/* CurrentTable.entires[CurrentTable.index].id_name=strdup(yytext);
-			CurrentTable.entires[CurrentTable.index].data_type=strdup(type);
-			CurrentTable.entires[CurrentTable.index].type=strdup("Function");
-			CurrentTable.index++; */
+			symbol_table[count].id_name=strdup(yytext);
+			symbol_table[count].data_type=strdup(type);
+			/* symbol_table[count].line_no=countn; */
+			symbol_table[count].type=strdup("Function");
+						symbol_table[count].scope_id=scope;
+			count++;
 		}
 	
 }
@@ -248,24 +298,14 @@ void insert_type() {
 	strcpy(type, yytext);
 }
 void exit_scope(){
-
-
-	printf("\nSYMBOL   DATATYPE   TYPE    Value \n");
-	printf("_______________________________________\n\n");
-	int i=0;
-	for(i=0; i<CurrentTable->index; i++) {
-		printf("%s\t%s\t%s\t%s\t\n", CurrentTable->entires[i].id_name, CurrentTable->entires[i].data_type, CurrentTable->entires[i].type, CurrentTable->entires[i].value);
+	for(int i=0;i<count;i++)
+	{
+		if(symbol_table[i].scope_id==scope)
+		{
+			symbol_table[i].scope_exit=-1;
+		}
 	}
-	printf("\n\n");
-
-/* printf("%d\n",CurrentTable.index); */
-/* CurrentTable = *CurrentTable.parent; */
-/* printf("%d\n",CurrentTable.index); */
-
-/* printf("exit index%d\n",CurrentTable->index); */
-CurrentTable = CurrentTable->parent;
-/* printf("Current index%d\n",CurrentTable->index); */
-
+	scope--;
 }
 void yyerror(const char* msg) {
   printf( "line %d: %s %s\n",countn, msg,yytext);
